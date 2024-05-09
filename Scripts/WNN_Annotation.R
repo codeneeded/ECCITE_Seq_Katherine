@@ -339,50 +339,109 @@ for (i in features) {
   ggsave(paste0(i,'_Featureplot_HIVonly.png'),dpi=500, width = 10, fea.pl)
 }
 
+setwd('C:/Users/axi313/Documents/ECCITE_Seq_Katherine/WNN/Feature_Plot/Stim_Split')
 
+fe <- c('CD69','IL2RA', 'TNFRSF4', 'FOXP3', 'IFNG', 'PDCD1')
+fe_p <- c('CD69','IL2RA', 'TNFRSF4', 'IFNGR1', 'PDCD1')
+
+DefaultAssay(seurat_isotype_h) <- 'ADT'
+for (i in fe_p) {
+  fea.pl <- FeaturePlot(seurat_isotype_h, reduction = 'wnn.umap', split.by = 'stim', features = i)
+  ggsave(paste0(i,'_ADT_Featureplot_HIVonly_bystim.png'),dpi=500, width = 13, fea.pl)
+}
+
+DefaultAssay(seurat_isotype_h) <- 'RNA'
+for (i in fe) {
+  fea.pl <- FeaturePlot(seurat_isotype_h, reduction = 'wnn.umap', split.by = 'stim', features = i)
+  ggsave(paste0(i,'_RNA_Featureplot_HIVonly_bystim.png'),dpi=500, width = 13, fea.pl)
+}
+
+###### Cluster Distribution by donor
+setwd('C:/Users/axi313/Documents/ECCITE_Seq_Katherine/WNN/Cluster_Proportions')
+
+# Step 1: Extract relevant information
+predicted_celltypes <- seurat_isotype_h@meta.data$predicted.celltype.l2
+donor_ids <- seurat_isotype_h@meta.data$orig.ident
+
+# Step 2: Calculate cell counts per cluster per donor
+cluster_counts <- table(donor_ids, predicted_celltypes)
+
+# Step 3: Create a table with raw numbers
+raw_numbers_table <- as.data.frame.matrix(cluster_counts)
+
+# Print or save the two tables
+print("Raw Numbers:")
+print(raw_numbers_table)
+
+# Export raw_numbers_table as a CSV file
+write.csv(raw_numbers_table, file = "raw_numbers_table.csv", row.names = TRUE)
+
+# Create a stacked bar plot
+raw <- seurat_isotype_h@meta.data %>% 
+  ggplot(aes(x=orig.ident, fill=predicted.celltype.l2)) + 
+  geom_bar() +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  theme(plot.title = element_text(hjust=0.5, face="bold")) +
+  ggtitle("NCells")
+
+
+# Calculate percentage distribution
+percentage_distribution <- prop.table(table(seurat_isotype_h@meta.data$orig.ident, seurat_isotype_h@meta.data$predicted.celltype.l2), margin = 1) * 100
+
+# Convert the percentage distribution table to a data frame
+percentage_df <- as.data.frame(percentage_distribution)
+
+# Rename the columns for clarity
+colnames(percentage_df) <- c("Donor ID", "Cluster", "Percentage")
+
+
+# Plot the stacked bar plot with % values as fill
+percent <- ggplot(percentage_df, aes(x = `Donor ID`, y = Percentage, fill = Cluster)) +
+  geom_bar(stat = "identity") +
+  theme_classic() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  theme(plot.title = element_text(hjust = 0.5, face = "bold")) +
+  ggtitle("Percentage Distribution of Cell Clusters by Donor")
+
+ggsave('Cluster_Raw_byDonor.png',dpi=500, width = 7, raw)
+ggsave('Cluster_Prop_byDonor.png',dpi=500, width = 7, percent)
 
 ###########################
 # load(paste0(load.path,"Seuratv5_WNN_Complete.RData"))
 
-################################## Dimplots ############################################
-setwd('C:/Users/axi313/Desktop/Analysis/Pediatric/Output/CITEseqV3/WNN/Cluster_Plots/By_Cluster')
-DimPlot(subset(seurat_isotype, idents = 0), reduction='wnn.umap',label=T,label.size = 5,repel=T)
-for (i in 0:35) {
-  x <- DimPlot(subset(seurat_isotype, idents = i), reduction='wnn.umap',label=T,label.size = 5,repel=T)+xlim(-20, 12)+ ylim(-20, 12)
-  ggsave(paste0('Cluster_',i,'_Plot.png'),dpi=500, width = 13, x)
+################################## Differential Expression ############################################
+setwd('C:/Users/axi313/Documents/ECCITE_Seq_Katherine/WNN/Differential_Expression/Azimuth')
+
+
+# Assuming 'seurat_isotype_h' is your Seurat object
+
+# Define the clusters
+clusters <- levels(as.factor(seurat_isotype_h@meta.data$predicted.celltype.l2))
+clusters
+# Create an empty list to store differential expression results
+de_results <- list()
+
+# Perform differential expression analysis for each cluster
+for (cluster in clusters) {
+  # Subset the data for the current cluster
+  subset_data <- subset(seurat_isotype_h, subset= predicted.celltype.l2 == cluster)
+  
+  # Check if both conditions have at least 20 cells
+  if (sum(subset_data$stim == "Med") >= 20 & sum(subset_data$stim == "HIV_peptide") >= 20) {
+    # Perform differential expression analysis comparing HIV peptide stimulation to media stimulation
+    de_result <- FindMarkers(subset_data, ident.1 = "HIV_peptide", ident.2 = "Med", group.by = 'stim', test.use = "MAST")
+    
+    # Add the result to the list
+    de_results[[cluster]] <- de_result
+  } else {
+    # If the condition is not met, skip the cluster and print a message
+    cat("Skipping cluster", cluster, "due to insufficient cells for differential expression analysis.\n")
+  }
 }
 
-################################ Old RNA VLN PLOT and Nebulosa ############################################
-fe.2 <- c('CD14','FCGR2B','SERPING1','CCR7','CD27','TCF7','CCL5','FCGR3A','PRF1','CD40LG','IRF8','TNFRSF4',
-          'CD8A','TNFRSF9','XCL2','CD7','CD8B','NELL2','C1QBP','CD3E','ICOS','IGFBP2','IGFBP4','LDHA',
-          'CCND3','MIR155HG','NR4A1','CTLA4','FOXP3','IL2RA','CD19','CD79A','IGHM','EBI3','HLA-DPA1',
-          'HLA-DRB1','CTSW','KLRC1','TNFRSF18','CCR4','IRF4','MALAT1','IKZF2','TRDV1','TRGC2',
-          'CD3D','CXCR3','GZMK','CCL2','HLA-DRA','SERPINA1','GNLY','NKG7','TIGIT','LTB','MAL','SELL',
-          'CCL4L2','CD70','IFNG','IL2RB','KLRD1','TRBC1','HAVCR2','LGALS1','NCAM1','CD36','CD4','IFI30',
-          'CXCL8','ITGAX','IL18BP','TNF','TRDV2','TRGV9','FABP5','MT-ND1','MT-ND5','CCL3','IL1B','TNFAIP2',
-          'CD40','MS4A1','XCL1','HIST1H4C','LTA','MKI67')
 
-setwd('C:/Users/axi313/Desktop/Analysis/Pediatric/Output/CITEseqV3/WNN/Violin_Plot/RNA_2')
-
-for (i in fe.2) {
-  vln.pl <- VlnPlot(seurat_isotype, features = i, assay = 'RNA')
-  ggsave(paste0(i,'_VLNplot.png'),dpi=500, width = 13, vln.pl)
-}
-
-# Feature Plots
-
-setwd('C:/Users/axi313/Desktop/Analysis/Pediatric/Output/CITEseqV3/WNN/Feature_Plot/RNA_2')
-DefaultAssay(seurat_isotype) <- 'RNA'
-
-for (i in fe.2) {
-  fea.pl <- FeaturePlot(seurat_isotype, reduction = 'wnn.umap', features = i)
-  ggsave(paste0(i,'_Featureplot.png'),dpi=500, width = 10, fea.pl)
-}
-
-# Nebulosa
-setwd('C:/Users/axi313/Desktop/Analysis/Pediatric/Output/CITEseqV3/WNN/Nebulosa_Plot/RNA_2')
-DefaultAssay(seurat_isotype) <- 'RNA'
-for (i in fe.2) {
-  neb.pl <- plot_density(seurat_isotype, reduction = 'wnn.umap', features = i)
-  ggsave(paste0(i,'_Featureplot_Nebulosa.png'),dpi=500, width = 10, neb.pl)
+# Save the results as CSV files
+for (result_name in names(de_results)) {
+  write.csv(de_results[[result_name]], file = paste0(result_name, "_HIV_peptide_VS_Media__DGE_results_Azimuth.csv"), row.names = TRUE)
 }
