@@ -17,19 +17,18 @@ library(DoubletFinder)
 library(ggplot2)
 library(gridExtra)
 library(SeuratWrappers)
-library(Nebulosa)
-library(tricycle)
-library(org.Hs.eg.db)
+#library(Nebulosa)
+#library(tricycle)
+#library(org.Hs.eg.db)
 library(Azimuth)
-options(Seurat.object.assay.version = "v5")
 library(scDblFinder)
-
+library(tricycle)
 # Data Input, Creation of Merged Seurat Object
 
 ##set path to load data
 
-setwd("C:/Users/axi313/Documents/ECCITE_Seq_Katherine/Preprocessing/Cell_Cycle")
-load.path <- "C:/Users/axi313/Documents/ECCITE_Seq_Katherine/saved_R_data/"
+setwd("C:/Users/ammas/Documents/ECCITE_Seq_Katherine/Preprocessing/Cell_Cycle")
+load.path <- "C:/Users/ammas/Documents/ECCITE_Seq_Katherine/saved_R_data/"
 
 # Load Data
 

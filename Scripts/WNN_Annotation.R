@@ -26,201 +26,322 @@ library(readxl)
 ##set path to load data
 
 
-setwd("C:/Users/axi313/Documents/ECCITE_Seq_Katherine/WNN")
-load.path <- "C:/Users/axi313/Documents/ECCITE_Seq_Katherine/saved_R_data/"
+setwd("C:/Users/ammas/Documents/ECCITE_Seq_Katherine/Integration")
+load.path <- "C:/Users/ammas/Documents/ECCITE_Seq_Katherine/saved_R_data/"
 
 load(paste0(load.path,'Seuratv5_isotype_Assay3.RData'))
 
 ################################################# Integrate RNA #############################################
 DefaultAssay(seurat_isotype) <- 'RNA'
-DefaultAssay(seurat_isotype)
 
 
-rna.list <- SplitObject(seurat_isotype, split.by = "orig.ident")
+################################################# Integrate RNA #############################################
 
-for (i in 1:length(rna.list)) {
-  rna.list[[i]] <- NormalizeData(rna.list[[i]],assay = 'RNA')
-  rna.list[[i]] <- FindVariableFeatures(rna.list[[i]], selection.method = "vst", 
-                                        nfeatures = 2000,assay = 'RNA')
-}
+### Split Layers for RNA for each batch
+seurat_isotype[["RNA"]] <- split(seurat_isotype[["RNA"]], f = seurat_isotype$orig.ident)
 
-rna.anchors <- FindIntegrationAnchors(object.list = rna.list, dims = 1:30)
+# Standard Processing seurat_isotype
+seurat_isotype <- NormalizeData(seurat_isotype)
+seurat_isotype <- FindVariableFeatures(seurat_isotype)
+seurat_isotype <- ScaleData(seurat_isotype)
+seurat_isotype <- RunPCA(seurat_isotype)
+seurat_isotype <- FindNeighbors(seurat_isotype, dims = 1:30, reduction = "pca")
+seurat_isotype <- FindClusters(seurat_isotype, resolution = 2, cluster.name = "unintegrated_clusters")
+seurat_isotype <- RunUMAP(seurat_isotype, dims = 1:30, reduction = "pca", reduction.name = "umap.unintegrated")
 
-rna.integrated <- IntegrateData(anchorset = rna.anchors, dims = 1:30)
-
-rna.integrated <- RenameAssays(rna.integrated, integrated = 'rna.integrated')
-
-# Run the standard workflow for visualization and clustering
-rna.integrated <- ScaleData(rna.integrated,assay = 'rna.integrated')
-rna.integrated <- RunPCA(rna.integrated, npcs = 30, reduction.name = "pca.rna.integrated")
-rna.integrated <- RunUMAP(rna.integrated, reduction = "pca.rna.integrated", dims = 1:30, reduction.name = "umap.rna.integrated")
-
-save(rna.integrated, file=paste0(load.path,"Seuratv5_WNN_rna_integrated.RData"))
-#load(paste0(load.path,'Seuratv5_WNN_rna_integrated.RData'))
-
-################################################# Integrate ADT ###############################################
-DefaultAssay(rna.integrated) <- 'ADT'
-DefaultAssay(rna.integrated)
-adt.list <- SplitObject(rna.integrated, split.by = "orig.ident")
-
-# define proteins to use in clustering (non-isptype controls)
-prots <- rownames(seurat_isotype@assays$ADT@data)
-isotype_genes <- c('Mouse-IgG1', 'Mouse-IgG2a', 'Mouse-IgG2b', 'Rat-IgG2b', 'Rat-IgG1', 'Rat-IgG2a', 'Hamster-IgG')
-prots <- setdiff(prots, isotype_genes)
-for (i in 1:length(adt.list)) {
-  VariableFeatures(adt.list[[i]]) = prots
-}
-
-features <- SelectIntegrationFeatures(object.list = adt.list)
-
-adt.list <- lapply(X = adt.list, FUN = function(x) {
-  x <- ScaleData(x, features = features)
-  x <- RunPCA(x, features = features)
-})
-
-anchors <- FindIntegrationAnchors(object.list = adt.list, reduction = "rpca", 
-                                  dims = 1:30)
-
-rna_adt_integrated <- IntegrateData(anchorset = anchors, dims = 1:30,new.assay.name = "integrated")
-rna_adt_integrated <- RenameAssays(rna_adt_integrated, integrated = 'adt.integrated')
-
-rna_adt_integrated <- ScaleData(rna_adt_integrated,assay = 'adt.integrated')
-rna_adt_integrated <- RunPCA(rna_adt_integrated, npcs = 30, reduction.name = "pca.adt.integrated")
-rna_adt_integrated <- RunUMAP(rna_adt_integrated, reduction = "pca.adt.integrated", dims = 1:30, reduction.name = "umap.adt.integrated")
-save(rna_adt_integrated, file=paste0(load.path,"Seuratv5_WNN_rna_adt_integrated.RData"))
-
-####################################### Seurat WNN default with PCA on dsb normalized protein ###############
-
-seurat_isotype <- rna_adt_integrated
+### seurat_isotype
 
 
-########### Check PCA variance
-# SET rna features 
-rna.features <- rownames(seurat_isotype@assays$rna.integrated)
-seurat_isotype <- ScaleData(seurat_isotype,assay = 'rna.integrated')
-seurat_isotype <- RunPCA(seurat_isotype, npcs = 30, reduction.name = "pca.rna.integrated",features=rna.features, assay = 'rna.integrated')
-seurat_isotype <- RunUMAP(seurat_isotype, reduction = "pca.rna.integrated", dims = 1:30, reduction.name = "umap.rna.integrated")
-
-### RNA
-
-ElbowPlot(object = seurat_isotype, 
-          ndims = 50, reduction = 'pca.rna.integrated')
-
-
-# Determine percent of variation associated with each PC
-pct <- seurat_isotype[["pca.rna.integrated"]]@stdev / sum(seurat_isotype[["pca.rna.integrated"]]@stdev) * 100
-
-# Calculate cumulative percents for each PC
-cumu <- cumsum(pct)
-
-# Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
-co1 <- which(cumu > 90 & pct < 5)[1]
-
-# Determine the difference between variation of PC and subsequent PC
-co2 <- sort(which((pct[1:length(pct) - 1] - pct[2:length(pct)]) > 0.1), decreasing = T)[1] + 1
-
-# last point where change of % of variation is more than 0.1%.
-co2
-
-# Minimum of the two calculation
-pcs <- min(co1, co2)
-
-pcs
-# Create a dataframe with values
-plot_df <- data.frame(pct = pct, 
-                      cumu = cumu, 
-                      rank = 1:length(pct))
-
-# Elbow plot to visualize 
-
-ggplot(plot_df, aes(cumu, pct, label = rank, color = rank > pcs)) + 
-  geom_text() + 
-  geom_vline(xintercept = 90, color = "grey") + 
-  geom_hline(yintercept = min(pct[pct > 5]), color = "grey") +
-  theme_bw()
-
-### PCs=16
-
-### ADT
-ElbowPlot(object = seurat_isotype, 
-          ndims = 50, reduction = 'pca.adt.integrated')
-
-# Determine percent of variation associated with each PC
-pct <- seurat_isotype[["pca.adt.integrated"]]@stdev / sum(seurat_isotype[["pca.adt.integrated"]]@stdev) * 100
-
-# Calculate cumulative percents for each PC
-cumu <- cumsum(pct)
-
-# Determine which PC exhibits cumulative percent greater than 90% and % variation associated with the PC as less than 5
-co1 <- which(cumu > 90 & pct < 5)[1]
-
-# Determine the difference between variation of PC and subsequent PC
-co2 <- sort(which((pct[1:length(pct) - 1] - pct[2:length(pct)]) > 0.1), decreasing = T)[1] + 1
-
-# last point where change of % of variation is more than 0.1%.
-co2
-
-# Minimum of the two calculation
-pcs <- min(co1, co2)
-
-pcs
-# Create a dataframe with values
-plot_df <- data.frame(pct = pct, 
-                      cumu = cumu, 
-                      rank = 1:length(pct))
-
-# Elbow plot to visualize 
-
-ggplot(plot_df, aes(cumu, pct, label = rank, color = rank > pcs)) + 
-  geom_text() + 
-  geom_vline(xintercept = 90, color = "grey") + 
-  geom_hline(yintercept = min(pct[pct > 5]), color = "grey") +
-  theme_bw()
-
-
-### apca=11
-
-# run WNN 
-seurat_isotype = FindMultiModalNeighbors(
-  seurat_isotype, reduction.list = list("pca.rna.integrated", "pca.adt.integrated"), 
-  dims.list = list(1:16, 1:11)
+seurat_isotype <- IntegrateLayers(
+  seurat_isotype,
+  method= CCAIntegration,
+  orig.reduction = "pca",
+  assay = 'RNA',
+  new.reduction = "integrated.cca.rna"
 )
 
-# cluster 
-seurat_isotype <-RunUMAP(seurat_isotype, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_")
-seurat_isotype <- FindClusters(seurat_isotype, graph.name = "wsnn", 
-                               algorithm = 3, 
-                               resolution = 0.8,
-                               random.seed = 1990)
+seurat_isotype <- IntegrateLayers(
+  seurat_isotype,
+  method= FastMNNIntegration,
+  assay = 'RNA',
+  new.reduction = "integrated.mnn.rna"
+)
 
-save(seurat_isotype, file=paste0(load.path,"Seuratv5_WNN_Complete.RData"))
+### EARTH
+seurat_isotype <- FindNeighbors(seurat_isotype, reduction = "integrated.cca.rna", dims = 1:30)
+seurat_isotype <- FindClusters(seurat_isotype, resolution = 2, cluster.name = "cca_clusters_rna")
+seurat_isotype <- RunUMAP(seurat_isotype, reduction = "integrated.cca.rna", dims = 1:30, reduction.name = "umap.cca.rna")
+seurat_isotype <- FindNeighbors(seurat_isotype, reduction = "integrated.mnn.rna", dims = 1:30)
+seurat_isotype <- FindClusters(seurat_isotype, resolution = 2, cluster.name = "mnn_clusters_rna")
+seurat_isotype <- RunUMAP(seurat_isotype, reduction = "integrated.mnn.rna", dims = 1:30, reduction.name = "umap.mnn.rna")
+
+### PLOT
+
+### TARA ALL
+p1 <- DimPlot(
+  seurat_isotype,
+  reduction = "umap.cca.rna",
+  group.by = c("predicted.celltype.l2", "cca_clusters_rna"),
+  combine = FALSE, label.size = 2
+)
+p2 <- DimPlot(
+  seurat_isotype,
+  reduction = "umap.mnn.rna",
+  group.by = c("predicted.celltype.l2", "mnn_clusters_rna"),
+  combine = FALSE, label.size = 2
+)
+# Combine the plots with wrap_plots and assign to a variable
+combined_plot <- wrap_plots(c(p1, p2), ncol = 2, byrow = FALSE)
+
+# Save the plot using ggsave
+ggsave(
+  filename = "RNA_Integration.png",  # Specify the file name and format (e.g., .png, .pdf)
+  plot = combined_plot,           # The combined plot to save
+  width = 18,                     # Set the width of the saved image
+  height = 12,                     # Set the height of the saved image
+  dpi = 300                       # Set the resolution for the saved image
+)
+
+############ ADT Integration #####################
+
+DefaultAssay(seurat_isotype) <-'ADT'
+
+### Convert assay to v5
+seurat_isotype[["ADT"]] <- as(object = seurat_isotype[["ADT"]], Class = "Assay5")
+
+### Split Layers for ADT for each batch
+seurat_isotype[["ADT"]] <- split(seurat_isotype[["ADT"]], f = seurat_isotype$orig.ident)
+
+# define proteins to use in clustering (non-isptype controls)
+prots <- rownames(seurat_isotype[["ADT"]]$data)
+isotype_genes <- c('Mouse-IgG1', 'Mouse-IgG2a', 'Mouse-IgG2b', 'Rat-IgG2b', 'Rat-IgG1', 'Rat-IgG2a', 'Hamster-IgG')
+prots <- setdiff(prots, isotype_genes)
+VariableFeatures(seurat_isotype) <- prots
 
 
-DimPlot(seurat_isotype, reduction='wnn.umap',label=T,label.size = 5,repel=T, group.by = 'predicted.celltype.l2', split.by = 'stim')
-DefaultAssay(seurat_isotype) <- 'ADT'
-FeaturePlot(seurat_isotype, reduction = 'wnn.umap', features = "CD40LG")
-VlnPlot(seurat_isotype, features = "TNFRSF4",  group.by = 'predicted.celltype.l2', split.by = 'stim')
+# Standard Processing seurat_isotype
+seurat_isotype <- ScaleData(seurat_isotype)
+seurat_isotype <- RunPCA(seurat_isotype,reduction.name = "apca")
+seurat_isotype <- FindNeighbors(seurat_isotype, dims = 1:30, reduction = "apca")
+seurat_isotype <- FindClusters(seurat_isotype, resolution = 2, cluster.name = "unintegrated_clusters_adt")
+seurat_isotype <- RunUMAP(seurat_isotype, dims = 1:30, reduction = "apca", reduction.name = "umap.unintegrated.adt")
+
+### seurat_isotype
+seurat_isotype <- IntegrateLayers(
+  seurat_isotype,
+  orig.reduction = 'apca',
+  features = prots,
+  method= FastMNNIntegration,
+  assay = 'ADT',
+  new.reduction = "integrated.mnn.adt"
+)
+
+seurat_isotype <- IntegrateLayers(
+  seurat_isotype,
+  method= CCAIntegration,
+  orig.reduction = "apca",
+  features = prots,
+  assay = 'ADT',
+  new.reduction = "integrated.cca.adt"
+)
+
+#### UMAP and Clustering #########
+### TARA All
+seurat_isotype <- FindNeighbors(seurat_isotype, reduction = "integrated.cca.adt", dims = 1:30)
+seurat_isotype <- FindClusters(seurat_isotype, resolution = 2, cluster.name = "cca_clusters_adt")
+seurat_isotype <- RunUMAP(seurat_isotype, reduction = "integrated.cca.adt", dims = 1:30, reduction.name = "umap.cca.adt")
+seurat_isotype <- FindNeighbors(seurat_isotype, reduction = "integrated.mnn.adt", dims = 1:30)
+seurat_isotype <- FindClusters(seurat_isotype, resolution = 2, cluster.name = "mnn_clusters_adt")
+seurat_isotype <- RunUMAP(seurat_isotype, reduction = "integrated.mnn.adt", dims = 1:30, reduction.name = "umap.mnn.adt")
+
+### PLOT
+
+### TARA ALL
+p1 <- DimPlot(
+  seurat_isotype,
+  reduction = "umap.cca.adt",
+  group.by = c("predicted.celltype.l2", "cca_clusters_adt"),
+  combine = FALSE, label.size = 2
+)
+p2 <- DimPlot(
+  seurat_isotype,
+  reduction = "umap.mnn.adt",
+  group.by = c("predicted.celltype.l2", "mnn_clusters_adt"),
+  combine = FALSE, label.size = 2
+)
+# Combine the plots with wrap_plots and assign to a variable
+combined_plot <- wrap_plots(c(p1, p2), ncol = 2, byrow = FALSE)
+
+# Save the plot using ggsave
+ggsave(
+  filename = "seurat_isotype_ADT_Integration.png",  # Specify the file name and format (e.g., .png, .pdf)
+  plot = combined_plot,           # The combined plot to save
+  width = 18,                     # Set the width of the saved image
+  height = 12,                     # Set the height of the saved image
+  dpi = 300                       # Set the resolution for the saved image
+)
+
+#### Save to load path
+
+save(seurat_isotype, file = paste0(load.path, "seurat_isotype_RNA_ADT.Rdata"))
+
+
+############# WSNN #######################################
+
+seurat_isotype <- FindMultiModalNeighbors(
+  seurat_isotype, reduction.list = list("integrated.mnn.rna", "integrated.cca.adt"), 
+  dims.list = list(1:30, 1:14), modality.weight.name = "wnn.weight"
+)
+
+################ UMAP ##########################################
+
+### TARA ALL
+
+seurat_isotype <- RunUMAP(seurat_isotype, nn.name = "weighted.nn", reduction.name = "wnn.umap", reduction.key = "wnnUMAP_")
+
+seurat_isotype <- FindClusters(seurat_isotype, graph.name = "wsnn", algorithm = 2, resolution = 0.5, cluster.name = 'snn.louvianmlr_0.5')
+seurat_isotype <- FindClusters(seurat_isotype, graph.name = "wsnn", algorithm = 2, resolution = 1, cluster.name = 'snn.louvianmlr_1')
+seurat_isotype <- FindClusters(seurat_isotype, graph.name = "wsnn", algorithm = 2, resolution = 1.5, cluster.name = 'snn.louvianmlr_1.5')
+
+seurat_isotype <- FindClusters(seurat_isotype, graph.name = "wsnn", algorithm = 3, resolution = 0.5, cluster.name = 'snn.slm_0.5')
+seurat_isotype <- FindClusters(seurat_isotype, graph.name = "wsnn", algorithm = 3, resolution = 1, cluster.name = 'snn.slm_1')
+seurat_isotype <- FindClusters(seurat_isotype, graph.name = "wsnn", algorithm = 3, resolution = 1.5, cluster.name = 'snn.slm_1.5')
+
+### Convert cluster to numeric/factors
+# Convert cluster identities to factors with numeric sorting
+# Convert cluster identities to factors with numeric sorting
+for (cluster_col in c("snn.louvianmlr_0.5", "snn.louvianmlr_1", "snn.louvianmlr_1.5",
+                      "snn.slm_0.5", "snn.slm_1", "snn.slm_1.5")) {
+  seurat_isotype[[cluster_col]][, 1] <- factor(
+    seurat_isotype[[cluster_col]][, 1],
+    levels = sort(as.numeric(levels(seurat_isotype[[cluster_col]][, 1])))
+  )
+}
+
+####### Plot comparing cluster
+# Load required library
+library(patchwork)
+
+# TARA ALL
+
+# Azimuth plots (first row)
+p1 <- DimPlot_scCustom(
+  seurat_isotype,
+  reduction = "wnn.umap",
+  group.by = "predicted.celltype.l1",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 5
+) + ggtitle("Azimuth L1")
+
+p2 <- DimPlot_scCustom(
+  seurat_isotype,
+  reduction = "wnn.umap",
+  group.by = "predicted.celltype.l2",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 5
+) + ggtitle("Azimuth L2")
+
+p3 <- DimPlot_scCustom(
+  seurat_isotype,
+  reduction = "wnn.umap",
+  group.by = "predicted.celltype.l3",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 5
+) + ggtitle("Azimuth L3")
+
+# SLM plots (second row)
+p4 <- DimPlot_scCustom(
+  seurat_isotype,
+  reduction = "wnn.umap",
+  group.by = "snn.slm_0.5",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 5
+) + ggtitle("snn.slm_0.5")
+
+p5 <- DimPlot_scCustom(
+  seurat_isotype,
+  reduction = "wnn.umap",
+  group.by = "snn.slm_1",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 5
+) + ggtitle("snn.slm_1")
+
+p6 <- DimPlot_scCustom(
+  seurat_isotype,
+  reduction = "wnn.umap",
+  group.by = "snn.slm_1.5",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 5
+) + ggtitle("snn.slm_1.5")
+
+# LouvainMLR plots (third row)
+p7 <- DimPlot_scCustom(
+  seurat_isotype,
+  reduction = "wnn.umap",
+  group.by = "snn.louvianmlr_0.5",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 5
+) + ggtitle("snn.louvianmlr_0.5")
+
+p8 <- DimPlot_scCustom(
+  seurat_isotype,
+  reduction = "wnn.umap",
+  group.by = "snn.louvianmlr_1",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 5
+) + ggtitle("snn.louvianmlr_1")
+
+p9 <- DimPlot_scCustom(
+  seurat_isotype,
+  reduction = "wnn.umap",
+  group.by = "snn.louvianmlr_1.5",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 5
+) + ggtitle("snn.louvianmlr_1.5")
+
+# Combine all plots into a 3x3 grid
+combined_plot <- wrap_plots(p1, p2, p3, p4, p5, p6, p7, p8, p9, ncol = 3, nrow = 3)
+
+# Save the combined plot to a file
+ggsave(
+  filename = "seurat_isotype_WNN_Clusters.png",
+  plot = combined_plot,
+  width = 24,  # Adjust width as needed
+  height = 17,  # Adjust height as needed
+  dpi = 300
+)
+
+#### Save to load path
+
+save(seurat_isotype, file = paste0(load.path, "seurat_isotype_WNN.Rdata"))
+
+
 
 ########## Annotation #############
 
 ### Cluster Plots
 
-seurat_isotype@meta.data$wsnn_res.0.8
 setwd('C:/Users/axi313/Documents/ECCITE_Seq_Katherine/WNN/Cluster_Plots')
 
-DimPlot(seurat_isotype, reduction='wnn.umap',label=T,label.size = 5,repel=T, group.by = 'predicted.celltype.l1')
-ggsave('WNN_ClusterPlot_Azimuth1.png',dpi=500, width = 13)
+DimPlot_scCustom(
+  seurat_isotype,
+  reduction = "wnn.umap",
+  group.by = "snn.louvianmlr_1",
+  split.by = 'stim',
+  label = TRUE,
+  repel = TRUE,
+  label.size = 5
+)
 
-DimPlot(seurat_isotype, reduction='wnn.umap',label=T,label.size = 5,repel=T, group.by = 'predicted.celltype.l2')
-ggsave('WNN_ClusterPlot_Azimuth2.png',dpi=500, width = 13)
-
-DimPlot(seurat_isotype, reduction='wnn.umap',label=T,label.size = 5,repel=T, group.by = 'predicted.celltype.l3')
-ggsave('WNN_ClusterPlot_Azimuth3.png',dpi=500, width = 13)
-
-DimPlot(seurat_isotype, reduction='wnn.umap',label=T,label.size = 5,repel=T)
-ggsave('WNN_ClusterPlot_res0.8.png',dpi=500, width = 13)
-
-DimPlot(seurat_isotype, reduction='wnn.umap',label=T,label.size = 5,repel=T, split.by = 'stim')
 ggsave('WNN_ClusterPlot_res0.8_bystim.png',dpi=500, width = 13)
 
 DimPlot(seurat_isotype, reduction='wnn.umap',label=T,label.size = 5,repel=T, split.by = 'PID')

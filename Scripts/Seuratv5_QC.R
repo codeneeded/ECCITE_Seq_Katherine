@@ -14,11 +14,11 @@ library(hdf5r)
 library(data.table)
 library(ggplot2)
 library(biomaRt)
-
+library(scCustomize)
 ############################################ Global Variables #######################################################
-setwd("C:/Users/axi313/Documents/ECCITE_Seq_Katherine/Preprocessing")
-in.path <- "C:/Users/axi313/Documents/ECCITE_Seq_Katherine/Raw_Data/"
-out.path <- "C:/Users/axi313/Documents/ECCITE_Seq_Katherine/saved_R_data/"
+setwd("C:/Users/ammas/Documents/ECCITE_Seq_Katherine/Preprocessing")
+in.path <- "C:/Users/ammas/Documents/ECCITE_Seq_Katherine/Raw_Data/"
+out.path <- "C:/Users/ammas/Documents/ECCITE_Seq_Katherine/saved_R_data/"
 
 
 load(paste0(out.path,"Seuratv5_CITEseq_dsbnorm_merged_Seurat.RData"))
@@ -151,28 +151,49 @@ metadata %>%
   geom_vline(xintercept = 2)
 dev.off()
 
+######## SC_Customize Output
+# All functions contain
+p1 <- QC_Plots_Genes(seurat_object = merged_seurat, low_cutoff = 600, high_cutoff = 5500)
+p2 <- QC_Plots_UMIs(seurat_object = merged_seurat, low_cutoff = 1200, high_cutoff = 45000)
+p3 <- QC_Plots_Mito(seurat_object = merged_seurat, high_cutoff = 20)
+p4 <- QC_Plots_Complexity(seurat_object = merged_seurat, high_cutoff = 0.8)
+
+png(file="Grouped_Cuttoff.png", width = 1800, height = 1200)
+wrap_plots(p1, p2, p3, p4, ncol = 4)
+dev.off()
+
+
+### Scatter QC
+# All functions contain
+png(file="UMIvsGene.png", width = 1800, height = 1200)
+QC_Plot_UMIvsGene(seurat_object = merged_seurat, low_cutoff_gene = 600, high_cutoff_gene = 5500, low_cutoff_UMI = 500,
+                  high_cutoff_UMI = 50000,group.by = 'orig.ident')
+dev.off()
+
+png(file="MitovsGene.png", width = 1800, height = 1200)
+QC_Plot_GenevsFeature(seurat_object = merged_seurat, feature1 = "percent_mito", low_cutoff_gene = 600,
+                      high_cutoff_gene = 5500, high_cutoff_feature = 20,group.by = 'orig.ident')
+dev.off()
+
+png(file="MitovsGene_gradient.png", width = 1800, height = 1200)
+QC_Plot_UMIvsGene(seurat_object = merged_seurat, meta_gradient_name = "percent_mito", low_cutoff_gene = 600,
+                  high_cutoff_gene = 5500, high_cutoff_UMI = 45000)
+dev.off()
+
+
 #################################################### FILTERING ######################################################
-#Cells with at least 200 detected genes and genes need to be expressed in at least 3 cells.
+
 merged_seurat <- JoinLayers(merged_seurat)
-selected_c <- WhichCells(merged_seurat, expression = nFeature_RNA > 200)
-selected_f <- rownames(merged_seurat)[Matrix::rowSums(merged_seurat@assays$RNA@layers$counts) > 3]
 
-
-#Proteins
-DefaultAssay(merged_seurat) <- 'ADT'
-selected_p <- rownames(merged_seurat)[Matrix::rowSums(merged_seurat) > 3]
-
-
-filtered_seurat <- subset(merged_seurat, features = c(selected_f,selected_p), cells = selected_c)
 
 DefaultAssay(merged_seurat) <- 'RNA'
-DefaultAssay(filtered_seurat) <- 'RNA'
+
 
 
 # Filter out low quality cells using selected thresholds -> these will change with experiment
 ##Cell Level Filtering
 #nUMI > 500
-#nGene > 250
+#nGene > 600
 #log10GenesPerUMI > 0.8
 #mitoRatio < 20%
 #riboratio > 5%
@@ -180,9 +201,9 @@ DefaultAssay(filtered_seurat) <- 'RNA'
 #Platlet <2%
 
 
-filtered_seurat <- subset(x = filtered_seurat, 
+filtered_seurat <- subset(x = merged_seurat, 
                           subset= (nCount_RNA >= 500) & 
-                            (nFeature_RNA >= 250) & 
+                            (nFeature_RNA >= 600) & 
                             (log10GenesPerUMI > 0.80) & 
                             (percent_mito < 15) &
                             (percent_ribo > 5) &
@@ -193,34 +214,33 @@ filtered_seurat <- subset(x = filtered_seurat,
 
 #Within our data we will have many genes with zero counts. 
 #These genes can dramatically reduce the average expression for a cell and so we will remove them from our data. 
+# Identify genes expressed in at least 10 cells
+genes_in_10_cells <- rowSums(filtered_seurat@assays$RNA@layers$counts > 0) >= 10
 
-# Extract counts
-counts <- LayerData(object = filtered_seurat, layer = "counts")
-
-# Output a logical matrix specifying for each gene on whether or not there are more than zero counts per cell
-nonzero <- counts > 0
+# Subset the Seurat object to keep only these genes
+filtered_seurat <- subset(filtered_seurat, features = names(genes_in_10_cells[genes_in_10_cells]))
 
 
-#filtering by prevalence. If a gene is only expressed in a handful of cells, it is not particularly meaningful 
-#as it still brings down the averages for all other cells it is not expressed in. 
-#For our data we choose to keep only genes which are expressed in 10 or more cells. 
-#By using this filter, genes which have zero counts in all cells will effectively be removed.
+### Make Post-QC Folder
+setwd("~/Documents/CD8_Longitudinal/QC") 
+folder_name <- "Post-QC"
 
-# Sums all TRUE values and returns TRUE if more than 10 TRUE values per gene
-keep_genes <- Matrix::rowSums(nonzero) >= 10
+# Check if the folder exists, if not, create it
+if (!dir.exists(folder_name)) {
+  dir.create(folder_name)
+  message("Folder '", folder_name, "' created.")
+} else {
+  message("Folder '", folder_name, "' already exists.")
+}
 
-# Only keeping those genes expressed in more than 10 cells
-filtered_counts <- counts[keep_genes, ]
-#filtered_seurat@assays$RNA@layers$counts <- filtered_counts
-
-# Reassign to filtered Seurat object
-filtered_seurat[['RNA']] <- CreateAssayObject(filtered_counts)
+# Change the working directory to the new folder
+setwd(folder_name)
 
 
 # Cells Post QC
-png(file="Post-QC_Cells_per_sample.png", width = 1100, height = 800)
+png(file="Post-QC_Cells_per_sample.png", width = 1800, height = 1200)
 filtered_seurat@meta.data %>% 
-  ggplot(aes(x=PID, fill=orig.ident)) + 
+  ggplot(aes(x=orig.ident, fill=orig.ident)) + 
   geom_bar() +
   theme_classic() +
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
@@ -228,7 +248,7 @@ filtered_seurat@meta.data %>%
   ggtitle("NCells")
 dev.off()
 
-png(file="Post-QC_features_grouped.png", width = 900, height = 800)
+png(file="Post-QC_features_grouped.png", width = 1800, height = 1200)
 VlnPlot(filtered_seurat, group.by = "orig.ident", features = feats.1, pt.size = 0.1, ncol = 2) +
   NoLegend()
 dev.off()
@@ -237,66 +257,4 @@ dev.off()
 
 f_metadata <- filtered_seurat@meta.data
 
-### Gene based Filtering
-
-par(mar = c(6, 8, 2, 1))
-C <- filtered_seurat@assays$RNA@counts
-C <- Matrix::t(Matrix::t(C)/Matrix::colSums(C)) * 100
-most_expressed <- order(apply(C, 1, median), decreasing = T)[20:1]
-
-png(file="Post-QC_Genes_Expressed_per_cell.png", width = 900, height = 600)
-par(mar = c(4, 8, 2, 1))
-boxplot(as.matrix(t(C[most_expressed, ])), cex = 0.1, las = 1, xlab = "% total count per cell",
-        col = (scales::hue_pal())(20)[20:1], horizontal = TRUE)
-dev.off()
-
-
-# Check Cell Counts Pre and Post Filteration
-table(merged_seurat$orig.ident)
-table(filtered_seurat$orig.ident)
-
-######################################## Sex Determination #######################################################
-genes.file = 'C:/Users/axi313/Desktop/Analysis/Pediatric/Scripts/Gene_Files/genes.table.csv'
-
-if (!file.exists(genes.file)) {
-  suppressMessages(require(biomaRt))
-  
-  # initialize connection to mart, may take some time if the sites are
-  # unresponsive.
-  mart <- useMart("ENSEMBL_MART_ENSEMBL", dataset = "hsapiens_gene_ensembl")
-  
-  # fetch chromosome info plus some other annotations
-  genes.table <- try(biomaRt::getBM(attributes = c("ensembl_gene_id", "external_gene_name",
-                                                   "description", "gene_biotype", "chromosome_name", "start_position"), mart = mart,
-                                    useCache = F))
-  
-  if (!dir.exists("C:/Users/axi313/Desktop/Analysis/Pediatric/Scripts/Gene_Files/")) {
-    dir.create("C:/Users/axi313/Desktop/Analysis/Pediatric/Scripts/Gene_Files/")
-  }
-  if (is.data.frame(genes.table)) {
-    write.csv(genes.table, file = genes.file)
-  }
-  
-  if (!file.exists(genes.file)) {
-    download.file("https://raw.githubusercontent.com/NBISweden/workshop-scRNAseq/master/labs/misc/genes.table.csv",
-                  destfile = "data/results/genes.table.csv")
-    genes.table = read.csv(genes.file)
-  }
-  
-} else {
-  genes.table = read.csv(genes.file)
-}
-Idents(filtered_seurat) <- 'orig.ident'
-genes.table <- genes.table[genes.table$external_gene_name %in% rownames(filtered_seurat),]
-chrY.gene = genes.table$external_gene_name[genes.table$chromosome_name == "Y"]
-
-filtered_seurat$pct_chrY = colSums(filtered_seurat@assays$RNA@counts[chrY.gene, ])/colSums(filtered_seurat@assays$RNA@counts)
-FeatureScatter(filtered_seurat, feature1 = "XIST", feature2 = "pct_chrY")
-
-png(file="Chromosome_Sex_Determination.png", width = 900, height = 600)
-VlnPlot(filtered_seurat, features = c("XIST", "pct_chrY"))
-dev.off()
-
-
 save(filtered_seurat, file="Seuratv5_filtered_seurat.RData")
-

@@ -30,22 +30,22 @@ library(readxl)
 
 ##set path to load data
 
-setwd("C:/Users/axi313/Documents/ECCITE_Seq_Katherine/WNN")
-load.path <- "C:/Users/axi313/Documents/ECCITE_Seq_Katherine/saved_R_data/"
+setwd("C:/Users/ammas/Documents/ECCITE_Seq_Katherine/WNN")
+load.path <- "C:/Users/ammas/Documents/ECCITE_Seq_Katherine/saved_R_data/"
 
 load(paste0(load.path,'SeuratV5_SplitSeurat_Preintegration.RData'))
 
 seurat_layer <- Merge_Seurat_List(split_seurat,merge.data = TRUE)
 
-
 ########################Calculate thresholds for Isotype Controls ##################################
 
-setwd('C:/Users/axi313/Documents/ECCITE_Seq_Katherine/WNN/Isotype')
 #### Define the isotype controls and extract data for plotting:
 isotype_genes <- c('Mouse-IgG1', 'Mouse-IgG2a', 'Mouse-IgG2b', 'Rat-IgG2b', 'Rat-IgG1', 'Rat-IgG2a', 'Hamster-IgG')
 
 # Extract the data for isotype controls
 isotype_data <- seurat_layer[["ADT"]]$data[isotype_genes, ]
+seurat_layer[["ADT"]]$data['Mouse-IgG1',]
+rownames(seurat_layer[["ADT"]]$data)
 
 # Convert the matrix to a data frame, retain cell barcodes, and reshape to long format
 plot_data <- as.data.frame(t(isotype_data)) %>%
@@ -64,6 +64,7 @@ threshold_data_list <- lapply(isotype_genes, function(isotype) {
 
 threshold_data <- do.call(rbind, threshold_data_list)
 
+seurat_layer@assays$ADT@data@Dimnames[[1]]
 #### Plot using ggplot2 with the added threshold data:
 
 ggplot(plot_data, aes(x = Isotype, y = Expression)) +
@@ -75,13 +76,13 @@ ggplot(plot_data, aes(x = Isotype, y = Expression)) +
   labs(title = "Isotype Control Expression with 99% Thresholds", y = "Expression Level") +
   theme(axis.text.x = element_text(angle = 90, hjust = 1))
 
-ggsave('Isotype_Threshold.png',dpi=500, width = 12)
+ggsave('Isotype_Threshold.png',dpi=500, width = 17)
 
 ########################################### Isotype Correction #####################################
 isotype_genes <- c('Mouse-IgG1', 'Mouse-IgG2a', 'Mouse-IgG2b', 'Rat-IgG2b', 'Rat-IgG1', 'Rat-IgG2a', 'Hamster-IgG')
 
 # Read the Excel file
-isotype_df <- read_excel(paste0(load.path,"isotype.xlsx"))
+isotype_df <- read_excel(paste0(load.path,"Isotype.xlsx"))
 
 # Create a named vector where names are proteins and values are isotypes
 protein_to_isotype <- setNames(isotype_df$isotype, isotype_df$names)
@@ -111,4 +112,3 @@ for (sample in unique(seurat_layer@meta.data$orig.ident)) {
 }
 
 save(seurat_isotype, file=paste0(load.path,"Seuratv5_isotype_Assay3.RData"))
-
