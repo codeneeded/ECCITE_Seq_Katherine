@@ -39,6 +39,29 @@ DimPlot_scCustom(
   seurat_isotype,
   reduction = "wnn.umap",
   group.by = "snn.louvianmlr_1",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 5
+)
+
+ggsave('WNN_ClusterPlot_res0.8_louvianmlr1.png',dpi=500, width = 13)
+
+DimPlot_scCustom(
+  seurat_isotype,
+  reduction = "wnn.umap",
+  group.by = "predicted.celltype.l2",
+  label = TRUE,
+  repel = TRUE,
+  label.size = 5
+)
+
+ggsave('WNN_ClusterPlot_res0.8_Azimuth.png',dpi=500, width = 13)
+
+
+DimPlot_scCustom(
+  seurat_isotype,
+  reduction = "wnn.umap",
+  group.by = "snn.louvianmlr_1",
   split.by = 'stim',
   label = TRUE,
   repel = TRUE,
